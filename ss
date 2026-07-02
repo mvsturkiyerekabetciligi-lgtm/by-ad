@@ -1245,9 +1245,6 @@ function Update-ProcessChangeMonitor {
     }
 }
 
-$script:BaselineBamKeys = @{}
-$script:BaselinePrefetchFiles = @{}
-
 # ===============================
 # STEP 1: System Check – tüm kontroller başarılı kabul edilir, sonuç %100
 # ===============================
@@ -1373,8 +1370,6 @@ if ($Bam.Count -eq 0) {
     Write-Host "WARNING: No BAM/DAM entries found" -ForegroundColor Yellow
 }
 
-foreach ($fp in (Get-BamRegistryFingerprints)) { $script:BaselineBamKeys[$fp] = $true }
-
 try {
     Initialize-WinForms
 
@@ -1470,8 +1465,6 @@ function Launch-PrefetchViewer {
 
     if ($prefetchFiles.Count -eq 0) {
         [System.Windows.Forms.MessageBox]::Show("No prefetch files found.","Prefetch",[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
-    } else {
-        foreach ($name in $prefetchFiles.Name) { $script:BaselinePrefetchFiles[$name] = $true }
     }
 
     $rows = foreach ($file in $prefetchFiles) {
@@ -1590,10 +1583,6 @@ $knownCheatFolders = @{}
 foreach ($folder in (Get-CheatFolderHits)) {
     $knownCheatFolders[$folder] = $true
 }
-$reportedBamDeletions = @{}
-$reportedPrefetchDeletions = @{}
-$reportedTamperEvents = @{}
-$reportedPrefetchHits = @{}
 $reportedCursorChanges = @{}
 $reportedMainCplHits = @{}
 $baselineCursorScheme = Get-CursorSchemeState
@@ -1609,7 +1598,6 @@ $lastProcessSnapshot = Get-ProcessSnapshot
 $watchedProcesses = @{}
 $monitoringStart = Get-Date
 $folderScanCounter = 0
-$deletionScanCounter = 0
 $processChangeCounter = 0
 $mainCplScanCounter = 0
 $nvidiaScanCounter = 0
@@ -1766,45 +1754,5 @@ while ($true) {
         $currentProcessSnapshot = Get-ProcessSnapshot
         Update-ProcessChangeMonitor -Previous $lastProcessSnapshot -Current $currentProcessSnapshot -Watched $watchedProcesses -LogFile $logFile
         $lastProcessSnapshot = $currentProcessSnapshot
-    }
-
-    $deletionScanCounter++
-    if ($deletionScanCounter -ge 10) {
-        $deletionScanCounter = 0
-
-        $currentBam = @{}
-        foreach ($fp in (Get-BamRegistryFingerprints)) { $currentBam[$fp] = $true }
-        foreach ($fp in $script:BaselineBamKeys.Keys) {
-            if (-not $currentBam.ContainsKey($fp) -and -not $reportedBamDeletions.ContainsKey($fp)) {
-                $reportedBamDeletions[$fp] = $true
-                $display = ($fp -split '\|')[-1]
-                Write-MonitorAlert -Message "BAM removed: $display" -LogFile $logFile -Color Red
-            }
-        }
-
-        $currentPrefetch = @{}
-        foreach ($pf in (Get-PrefetchFileNames)) {
-            $currentPrefetch[$pf] = $true
-            if (-not $script:BaselinePrefetchFiles.ContainsKey($pf) -and -not $reportedPrefetchHits.ContainsKey($pf)) {
-                $pfKw = Get-MatchedCheatKeyword -Text $pf
-                if ($pfKw) {
-                    $reportedPrefetchHits[$pf] = $true
-                    Write-MonitorAlert -Message "Prefetch added [$pfKw]: $pf" -LogFile $logFile -Color Red
-                }
-            }
-        }
-        foreach ($pf in $script:BaselinePrefetchFiles.Keys) {
-            if (-not $currentPrefetch.ContainsKey($pf) -and -not $reportedPrefetchDeletions.ContainsKey($pf)) {
-                $reportedPrefetchDeletions[$pf] = $true
-                Write-MonitorAlert -Message "Prefetch deleted: $pf" -LogFile $logFile -Color Red
-            }
-        }
-
-        foreach ($ev in (Get-TamperLogEvents -Since $monitoringStart)) {
-            $eventKey = "$($ev.LogName)|$($ev.RecordId)"
-            if ($reportedTamperEvents.ContainsKey($eventKey)) { continue }
-            $reportedTamperEvents[$eventKey] = $true
-            Write-MonitorAlert -Message "Log cleared ($($ev.Id))" -LogFile $logFile -Color Red
-        }
     }
 }
